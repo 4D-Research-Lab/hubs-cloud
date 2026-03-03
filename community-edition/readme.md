@@ -1,3 +1,10 @@
+Current SSL Certificates expires on: April 8, 2026
+
+Important notes
+Every 90 days, the SSL Certificates need to be regenerated, by following https://docs.hubsfoundation.org/regenerating-ssl-certificates.html
+Initial admin, domain name and security credentials are first entered in input-values.yaml, after which "gen-hcce" script is used to generate hcce.yaml. Edit hcce.yaml directly for the purpose of regenerating ssl certificates.
+NEVER change the security credentials of Guardian_key, Phx_key (phoenix), and Node_cookie. Even after changing these back to the correct values, experience shows that the cluster can remain bugged, and will require redeployment.
+
 ![Hubs Cloud Community Edition](https://uploads-prod.reticulum.io/files/05884d13-e5e8-4f64-9aca-792aae6d7734.png)
 
 # Hubs Cloud Community Edition
