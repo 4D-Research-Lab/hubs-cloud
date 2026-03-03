@@ -7,6 +7,445 @@ NEVER change the security credentials of Guardian_key, Phx_key (phoenix), and No
 
 ![Hubs Cloud Community Edition](https://uploads-prod.reticulum.io/files/05884d13-e5e8-4f64-9aca-792aae6d7734.png)
 
+# Hubs Community Edition - Setup and Maintenance Guide
+
+This guide covers deploying Mozilla Hubs Community Edition on DigitalOcean Kubernetes, with DNS via Porkbun and transactional email via Scaleway.
+
+---
+
+## Prerequisites
+
+- A Porkbun account
+- A Scaleway account
+- A DigitalOcean account
+- A registered domain name (see step 1)
+- Windows, macOS, or Linux machine with command line access
+
+---
+
+## 1. Register a Domain (Porkbun)
+
+1. Go to [Porkbun](https://porkbun.com) and create an account or log in.
+2. Search for your desired domain name in the search bar on the homepage.
+3. Select a top-level domain and add it to your cart. Approximate pricing:
+   - `.com`: ~$10/year (first year often ~$1)
+   - `.space`, `.site`: often under $2 for the first year
+4. Complete checkout.
+
+The domain will not resolve to anything yet. You will link it to DigitalOcean in a later step.
+
+> Note: Porkbun may log you out during the purchase or DNS setup process. If buttons or fields stop responding, log back in and continue.
+
+---
+
+## 2. Set Up Transactional Email (Scaleway)
+
+Hubs sends magic-link login emails to users via SMTP. Scaleway's Transactional Email service provides this. The free tier covers 300 emails per month (500 per month without identity verification, 5,000 per month with identity verification).
+
+### Part 1: Create a Scaleway account
+
+1. Go to [Scaleway Transactional Email](https://www.scaleway.com/en/transactional-email-tem/) and select **Sign up**.
+2. Select **Personal project** as the account type.
+3. Sign up with your email address, accept the Terms of Service and Data Protection Agreement, and confirm your email.
+4. Fill in your first name, last name, and billing address.
+5. Add a payment method (credit card required). Scaleway charges a one-time 1 EUR verification fee. The 4-digit verification code appears in the transaction description on your bank statement or card app, in the format `SCW* C-XXXX`.
+6. Create your first project. Give it a recognizable name such as `HubsCEProject`.
+7. Select **Other or I don't know** for project use case and click **Start working**.
+
+### Part 2: Add your domain to Scaleway
+
+8. In the Scaleway console sidebar, go to **Domains & Web Hosting > Transactional Email**.
+9. Click **Add domain**.
+10. Under **Add a domain external to Scaleway**, enter your Porkbun domain (e.g. `yourcoolhubs.space`). Domain names may only contain alphanumeric characters, dots, and dashes.
+11. Enter an estimated monthly email count beyond 300 (you can enter 0 if unsure).
+12. Click **Validate domain name**.
+13. On the next page, **Configure your DNS records manually** will be selected by default. Leave it as-is. Scaleway will show you the values for four DNS records: SPF, DKIM, MX, and DMARC. Keep this page open, you will need these values in the next step.
+
+### Part 3: Add DNS records at Porkbun
+
+14. Log in to [Porkbun](https://porkbun.com), go to **Account > Domain Management**, find your domain, and click **Details**.
+15. Click the **DNS Records** edit icon to open the DNS management popup.
+16. Delete any existing default records that contain the word "pixie" by clicking the trashcan icon next to them.
+17. Add the following four records by copying values from the Scaleway page. For each record, set **TTL** to 600 and leave **Priority** blank unless otherwise noted.
+
+**SPF record:**
+- Type: `TXT`
+- Host: leave blank (root domain)
+- Answer/Value: paste the SPF value from Scaleway (`v=spf1 include:_spf.tem.scaleway.com -all`)
+
+**DKIM record:**
+- Type: `TXT`
+- Host: paste the Name value from Scaleway. Porkbun auto-appends your domain to the Host field, so if the Scaleway name ends with your domain (e.g. `xxxxxxx._domainkey.yourcoolhubs.space`), paste only the part before your domain (e.g. `xxxxxxx._domainkey`). Delete any trailing domain text if it appears after pasting.
+- Answer/Value: paste the DKIM value from Scaleway
+
+**MX record:**
+- Type: `MX`
+- Host: leave blank
+- Answer/Value: `blackhole.tem.scaleway.com.` (include the trailing dot)
+- Priority: `10`
+
+**DMARC record:**
+- Type: `TXT`
+- Host: `_dmarc`
+- Answer/Value: paste the DMARC value from Scaleway
+
+18. Back at Scaleway, check the box **I have added these DNS records to my DNS zone** and click **Verify domain**. Verification can take up to 48 hours, but is often completed within minutes. Scaleway sends a confirmation email when the domain is verified.
+
+### Part 4: Retrieve your SMTP credentials
+
+19. In the Scaleway console, go to **Transactional Email > your domain > Overview**. Note down:
+   - **SMTP Server**: `smtp.tem.scaleway.com`
+   - **SMTP Port**: `2587` (use this port, not 587, as Kubernetes providers including DigitalOcean may block port 587)
+   - **Username**: your Scaleway **Project ID**, shown in the SMTP configuration section of the Overview tab
+20. Go to **IAM > API Keys** and generate an API key for your project. Note down the **secret key** -- this is your SMTP password and will not be shown again.
+
+---
+
+## 3. Create a Kubernetes Cluster (DigitalOcean)
+
+1. Sign up or log in at [DigitalOcean](https://www.digitalocean.com).
+2. In the left sidebar, click **Kubernetes** under Manage.
+3. Click **Create a Kubernetes Cluster** and configure:
+   - **Version**: select the recommended version
+   - **Datacenter region**: choose the location closest to your users
+   - **VPC Network**: leave as default
+   - **Cluster capacity**:
+     - Node type: Shared CPU, Basic
+     - Plan: $24/month
+     - Autoscale: off
+     - Nodes: 1 (single-node clusters are more stable on DigitalOcean)
+     - Minimum RAM: 4 GB (required for Hubs to run)
+4. Give the cluster a name and click **Create cluster**.
+
+---
+
+## 4. Install Command Line Tools
+
+### kubectl
+
+Install kubectl for your operating system:
+
+- **Windows**: https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/
+- **macOS/Linux**: follow the options in the sidebar at the link above
+
+Verify the installation:
+
+```bash
+kubectl version
+```
+
+Expected output: a Client version and a Kustomize version.
+
+### doctl
+
+1. Visit the [doctl releases page](https://github.com/digitalocean/doctl/releases) and download the version for your system (e.g. Windows-AMD64).
+2. Extract the `.zip` file and place the extracted files in a short path such as `C:\code`.
+3. Add the folder to your system PATH:
+   - Search for **environment variables** in the Windows search bar
+   - Open **Environment Variables**
+   - Under **User variables**, select **Path** and click **Edit**
+   - Click **New** and paste the folder path (e.g. `C:\code`)
+   - Click OK to confirm
+
+Verify the installation:
+
+```bash
+doctl version
+```
+
+Expected output: a doctl version number and a Git commit hash.
+
+---
+
+## 5. Connect doctl to DigitalOcean
+
+1. In the DigitalOcean sidebar, scroll to the bottom and click **API**.
+2. Click **Generate New Token**:
+   - Expiration: No expire
+   - Scope: Full Access
+3. Copy and save the token -- it will not be shown again.
+4. In your terminal, run:
+
+```bash
+doctl auth init --context HubsContext
+```
+
+Enter the token when prompted.
+
+5. Switch to the new context:
+
+```bash
+doctl auth switch --context HubsContext
+```
+
+6. Go back to your cluster in DigitalOcean, navigate to step 2 **Connecting to Kubernetes**, and copy and run the authentication command shown there.
+
+---
+
+## 6. Configure Hubs
+
+1. Clone or download the [hubs-cloud repository](https://github.com/Hubs-Foundation/hubs-cloud) and open the `community-edition` folder.
+2. Open `input-values.yaml` and fill in the following fields:
+
+| Field | Value |
+|---|---|
+| `HUB_DOMAIN` | Your Porkbun domain, e.g. `yourcoolhubs.space` |
+| `ADM_EMAIL` | Your admin email address |
+| `SMTP_SERVER` | `smtp.tem.scaleway.com` |
+| `SMTP_PORT` | `2587` |
+| `SMTP_USER` | Your Scaleway Project ID |
+| `SMTP_PASS` | Your Scaleway API secret key |
+| `node`, `guardian`, `phoenix` | Random strings of lowercase letters and numbers |
+
+> Do not change `node`, `guardian`, or `phoenix` after the initial setup.
+
+Optionally, add API tokens for SketchFab and Tenor in their respective fields.
+
+3. Open a terminal in the `community-edition` folder and run:
+
+```bash
+npm ci
+npm run gen-hcce
+```
+
+This generates a `hcce.yaml` file based on your input values.
+
+---
+
+## 7. Deploy to Kubernetes
+
+Navigate to the `community-edition` folder in your terminal:
+
+```bash
+cd C:/hubs-cloud-master/community-edition/
+```
+
+Apply the configuration to the cluster:
+
+```bash
+kubectl apply -f hcce.yaml
+```
+
+Verify the deployment:
+
+```bash
+kubectl get deployment -n hcce
+```
+
+Wait a few minutes until all pods show `1/1` under the **Ready** column. This means all components have started without errors.
+
+---
+
+## 8. Link Domain to Cluster (Porkbun DNS)
+
+Get the external IP address of the load balancer:
+
+```bash
+kubectl -n hcce get svc lb
+```
+
+Copy the value under **External-IP**. Then:
+
+1. Log in to Porkbun, go to **Account > Domain Management**, find your domain, and click **Details**.
+2. Click the **DNS Records** edit icon to open the DNS management popup.
+3. Create four A records with the following settings:
+   - **Type**: A
+   - **TTL**: 600
+   - **Answer/Value**: the External-IP from above
+   - **Host values**: *(leave blank)*, `assets`, `stream`, `cors`
+
+These four records allow the domain and its required subdomains to reach the Hubs instance.
+
+---
+
+## 9. Set Up SSL Certificates
+
+Run the following command from the `community-edition` folder:
+
+```bash
+npm run gen-ssl
+```
+
+Verify that the output contains four certificates: `cert-`, `cert-assets`, `cert-stream`, and `cert-cors`. If any are missing, run the command again.
+
+Then, open `hcce.yaml` and find the line containing `default-ssl-certificate` (around line 1315, or use Ctrl+F to search). Add a `#` at the start of that line to comment it out.
+
+Re-apply the configuration:
+
+```bash
+kubectl apply -f hcce.yaml
+```
+
+Your Hubs instance is now accessible via your domain. If the security warning persists in your browser, clear the browser cache or try a different browser.
+
+---
+
+## 10. Set Up Firewalls (DigitalOcean)
+
+1. In DigitalOcean, go to **Networking > Firewalls** in the left sidebar.
+2. Click **Create Firewall** and add three Inbound Rules:
+
+| Protocol | Port |
+|---|---|
+| TCP | 4443 |
+| TCP | 5349 |
+| UDP | 35000-60000 |
+
+3. Under **Apply to Droplets**, type the first letter of your node pool name to find it and apply the firewall.
+
+Hubs is now fully operational.
+
+---
+
+## 11. First Login
+
+1. Visit your domain and click **Sign in / Sign up**.
+2. Enter the admin email address you configured.
+3. Use the magic link sent to your email to log in.
+4. The **Admin** option will appear on the Hubs homepage.
+
+---
+
+## Maintenance
+
+### Refreshing SSL Certificates
+
+SSL certificates generated by `npm run gen-ssl` are valid for 90 days. To renew:
+
+```bash
+cd C:/hubs-cloud-master/community-edition/
+npm run gen-ssl
+kubectl apply -f hcce.yaml
+```
+
+Verify again that all four certificates appear in the output before applying.
+
+### Syncing with Upstream
+
+This repository tracks updates from [Hubs-Foundation/hubs-cloud](https://github.com/Hubs-Foundation/hubs-cloud). A GitHub Actions workflow runs every Monday to merge upstream changes.
+
+To trigger a sync manually, go to **Actions > Sync Upstream** in this repository and click **Run workflow**.
+
+If the workflow fails, there are merge conflicts on files that were modified locally. Resolve them before merging.
+
+> `input-values.yaml` contains your configuration and should never be overwritten by upstream changes. If a merge conflict appears on this file, always keep your local version.
+
+### Updating the Cluster Configuration
+
+After any change to `input-values.yaml` or `hcce.yaml`:
+
+```bash
+npm run gen-hcce
+kubectl apply -f hcce.yaml
+```
+
+---
+
+## Troubleshooting
+
+### Pods not reaching 1/1 after deployment
+
+Check the status of all pods:
+
+```bash
+kubectl get pods -n hcce
+```
+
+View logs for a specific pod (replace `<pod-name>` with the name from the above output):
+
+```bash
+kubectl logs <pod-name> -n hcce
+```
+
+Common causes:
+- Incorrect values in `input-values.yaml` (SMTP credentials, domain name)
+- Cluster has insufficient RAM (minimum 4 GB required)
+- The cluster is still starting up -- wait a few more minutes
+
+### Domain does not resolve to Hubs
+
+- Verify the four A records exist in Porkbun DNS (blank host, `assets`, `stream`, `cors`)
+- Confirm the IP in the records matches the current load balancer IP:
+
+```bash
+kubectl -n hcce get svc lb
+```
+
+- DNS changes can take a few minutes to propagate. Porkbun's minimum TTL is 600 seconds.
+
+### Browser shows a security warning after SSL setup
+
+- Clear your browser cache
+- Try the URL in a private/incognito window or a different browser
+- Confirm that the line containing `default-ssl-certificate` in `hcce.yaml` is commented out with `#`
+- Confirm all four certificates were generated before running `kubectl apply`
+
+### SSL certificate renewal fails (missing certificates)
+
+Run `npm run gen-ssl` again. If one or more certificates still do not appear, check that:
+- Your Porkbun A records are still pointing to the correct External-IP
+- The cluster is fully online (`kubectl get deployment -n hcce`)
+
+### Magic link emails are not arriving
+
+- Confirm your Scaleway domain shows as verified in the Transactional Email dashboard
+- Confirm `SMTP_PORT` is set to `2587`, not `587`
+- Confirm `SMTP_USER` is your Scaleway **Project ID**, not your email address or account name
+- Confirm `SMTP_PASS` is your Scaleway **API secret key**
+- Check your Scaleway Transactional Email dashboard for delivery errors or bounces
+- Scaleway's free tier is capped at 300 emails per month (500 without identity verification, 5,000 with). If you have exceeded this quota, emails will not be sent.
+
+### SMTP port blocked by DigitalOcean
+
+DigitalOcean and other Kubernetes providers may block port 587. Always use port `2587` with Scaleway, which is provided specifically as a fallback for this reason.
+
+### Scaleway domain verification is pending or failing
+
+Domain verification can take up to 48 hours, though it is usually quick. If verification fails, Scaleway sends an email with the specific error. Common causes:
+- A DNS record was entered with incorrect formatting in Porkbun
+- The DKIM Host field includes the full domain suffix -- Porkbun appends the domain automatically, so if you included it manually, remove it from the Host field and save again
+- Records have not yet propagated -- wait a few minutes and click **Verify domain** again at Scaleway
+
+### Firewall issues (multiplayer not working)
+
+Confirm the three inbound rules are applied to the correct node pool in DigitalOcean:
+
+| Protocol | Port |
+|---|---|
+| TCP | 4443 |
+| TCP | 5349 |
+| UDP | 35000-60000 |
+
+### doctl authentication fails
+
+Re-authenticate with a fresh token:
+
+```bash
+doctl auth init --context HubsContext
+```
+
+If the context already exists, remove it first:
+
+```bash
+doctl auth remove --context HubsContext
+doctl auth init --context HubsContext
+```
+
+### kubectl cannot connect to cluster
+
+Re-run the cluster authentication command from DigitalOcean:
+
+1. Go to your cluster in the DigitalOcean console
+2. Navigate to **Connecting to Kubernetes** (step 2)
+3. Copy and run the command shown there
+
+Verify connectivity:
+
+```bash
+kubectl get nodes
+```
+
+
 # Hubs Cloud Community Edition
 
 Community Edition is a free tool designed to help developers deploy the full Hubs stack on cloud computing software of their choosing. Community Edition simplifies and automates most of the complex deployment process using [Kubernetes](https://kubernetes.io/), a containerized software orchestration system.
