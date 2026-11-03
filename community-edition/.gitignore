@@ -3,3 +3,4 @@
 /ssl_script/cbb.yaml
 /data_backups
 .DS_Store
+/input-values.yaml
