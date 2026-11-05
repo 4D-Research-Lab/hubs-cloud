@@ -46,6 +46,7 @@ metadata:
   namespace: $Namespace
   annotations:
     kubernetes.io/ingress.class: haproxy
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     haproxy.org/response-set-header: |
       access-control-allow-origin "https://$HUB_DOMAIN"
     haproxy.org/path-rewrite: /api-internal(.*) /_drop_
@@ -416,8 +417,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   revisionHistoryLimit: 1
   template:
     metadata:
@@ -434,6 +435,9 @@ spec:
           name: ret-config
       containers:
       - name: reticulum
+        resources:
+          requests:
+            memory: 1536Mi
         volumeMounts:
         - name: storage
           mountPath: /storage
@@ -1258,6 +1262,9 @@ spec:
           httpGet:
             path: /healthz
             port: 1042
+          timeoutSeconds: 5
+          periodSeconds: 10
+          failureThreshold: 5
         env:
         - name: TZ
           value: "Etc/UTC"

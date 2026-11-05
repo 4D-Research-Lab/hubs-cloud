@@ -8,7 +8,7 @@ metadata:
   namespace: $Namespace
 spec:
   accessModes:
-    - ReadWriteOncePod
+    - ReadWriteOnce
   resources:
     requests:
       storage: $PERSISTENT_VOLUME_SIZE
