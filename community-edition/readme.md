@@ -210,7 +210,14 @@ npm ci
 npm run gen-hcce
 ```
 
-This generates a `hcce.yaml` file based on your input values.
+This generates **two** files from your input values:
+
+- `hcce.yaml` — everything except credentials. Safe to re-apply any time.
+- `hcce-secret.yaml` — the passwords and keys.
+
+They are separate because `gen-hcce` mints a fresh encryption keypair on every run. If
+they were one file, re-applying it would replace the live credentials with new ones. Both
+are gitignored; never commit either.
 
 ---
 
@@ -338,8 +345,23 @@ After any change to `input-values.yaml` or `hcce.yaml`:
 
 ```bash
 npm run gen-hcce
-kubectl apply -f hcce.yaml
+npm run apply
 ```
+
+That is safe to run as often as you like. `hcce.yaml` holds no credentials, so applying it
+cannot disturb them, and `npm run apply` only applies `hcce-secret.yaml` if the cluster has
+no credentials yet — a first install.
+
+**If you changed a password or key** in `input-values.yaml`, that is the one case needing
+an extra step, because the cluster will not pick it up otherwise:
+
+```bash
+kubectl apply -f hcce-secret.yaml
+kubectl rollout restart deploy/reticulum deploy/dialog -n hcce
+```
+
+Restart **both**. They share a key, and if only one restarts they disagree about it and
+voice stops working — with nothing in the logs to say why.
 
 ---
 
