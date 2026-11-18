@@ -329,10 +329,12 @@ data:
     from = "noreply@<HUB_DOMAIN>"
 
     [ret."Elixir.Ret.Mailer"]
-    server = "<SMTP_SERVER>"
+    relay = "<SMTP_SERVER>"
     port = "<SMTP_PORT>"
     username = "<SMTP_USER>"
     password = "<SMTP_PASS>"
+
+    server = "<SMTP_SERVER>" # deprecated - kept for old Reticulum/Bamboo compatibility.
 
     [ret."Elixir.Ret.Support"]
     slack_webhook_url = "<SLACK_WEBHOOK>"
@@ -563,6 +565,8 @@ spec:
           value: "http://speelycaptor:5000"
         - name: turkeyCfg_STORAGE_QUOTA_GB
           value: "1000"
+        - name: ERL_MAX_PORTS
+          value: "1048576"
         livenessProbe:
           httpGet:
             path: /health
@@ -1242,6 +1246,7 @@ spec:
       containers:
       - name: haproxy
         image: $Container_Dockerhub_Username/haproxy:$Container_Tag
+        command: ["sh", "-c", 'ulimit -n 1048576 && /start.sh "$@"', "--"]
         args:
         - --configmap=$Namespace/haproxy-config
         - --https-bind-port=4443
