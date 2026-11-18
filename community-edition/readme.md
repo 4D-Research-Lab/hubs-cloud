@@ -1,9 +1,11 @@
-Current SSL Certificates expires on: April 8, 2026
-
 Important notes
-Every 90 days, the SSL Certificates need to be regenerated, by following https://docs.hubsfoundation.org/regenerating-ssl-certificates.html
-Initial admin, domain name and security credentials are first entered in input-values.yaml, after which "gen-hcce" script is used to generate hcce.yaml. Edit hcce.yaml directly for the purpose of regenerating ssl certificates.
-NEVER change the security credentials of Guardian_key, Phx_key (phoenix), and Node_cookie. Even after changing these back to the correct values, experience shows that the cluster can remain bugged, and will require redeployment.
+
+Certificates renew automatically. cert-manager owns all four of them, so there is no
+90-day renewal to do. **Do not run `npm run gen-ssl`**. That command and cert-manager would fight
+over the same Secrets.
+
+Initial admin, domain name and credentials go in `input-values.yaml`, then `gen-hcce`
+generates `hcce.yaml` from it.
 
 ![Hubs Cloud Community Edition](https://uploads-prod.reticulum.io/files/05884d13-e5e8-4f64-9aca-792aae6d7734.png)
 
@@ -445,6 +447,13 @@ Verify connectivity:
 kubectl get nodes
 ```
 
+
+<!-- ------------------------------------------------------------------------
+     4D-SPECIFIC CONTENT ENDS HERE. Everything BELOW is upstream's readme.
+
+     If a merge from upstream conflicts in this file: keep everything above
+     this marker, take upstream's version of everything below it.
+     ------------------------------------------------------------------------ -->
 
 # Hubs Cloud Community Edition
 
