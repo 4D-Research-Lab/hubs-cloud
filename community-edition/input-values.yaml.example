@@ -64,7 +64,7 @@ PERSISTENT_VOLUME_SIZE: "10Gi"
 # the claim is ever deleted.
 PERSISTENT_VOLUME_STORAGE_CLASS: "do-block-storage-retain"
 
-OVERRIDE_RETICULUM_IMAGE: "hubsfoundation/ret:$Container_Tag"
+OVERRIDE_RETICULUM_IMAGE: "hubsfoundation/reticulum:stable-855"
 OVERRIDE_POSTGREST_IMAGE: "No"
 OVERRIDE_POSTGRES_IMAGE: "No"
 OVERRIDE_PGBOUNCER_IMAGE: "No"

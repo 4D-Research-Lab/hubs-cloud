@@ -437,9 +437,6 @@ spec:
           name: ret-config
       containers:
       - name: reticulum
-        resources:
-          requests:
-            memory: 1536Mi
         volumeMounts:
         - name: storage
           mountPath: /storage
