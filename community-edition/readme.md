@@ -232,8 +232,14 @@ cd C:/hubs-cloud-master/community-edition/
 Apply the configuration to the cluster:
 
 ```bash
-kubectl apply -f hcce.yaml
+npm run apply
 ```
+
+**Use `npm run apply`, not `kubectl apply -f hcce.yaml` directly.** They are not the same.
+`npm run apply` first shows you `kubectl diff` and refuses to proceed until you pass
+`--yes`, and it creates the credentials Secret on a first install. A raw `kubectl apply`
+does neither — on 18 November 2026 it broke TLS on the live site by applying a template
+setting the cluster had never had.
 
 Verify the deployment:
 
@@ -338,6 +344,37 @@ To trigger a sync manually, go to **Actions > Sync Upstream** in this repository
 If the workflow fails, there are merge conflicts on files that were modified locally. Resolve them before merging.
 
 > `input-values.yaml` contains your configuration and should never be overwritten by upstream changes. If a merge conflict appears on this file, always keep your local version.
+
+### Upgrading the application
+
+The six Hubs Foundation images are pinned to exact builds in `input-values.yaml`, so
+nothing moves unless someone decides it should. To move one:
+
+1. Find the current build number on Docker Hub — e.g.
+   https://hub.docker.com/r/hubsfoundation/reticulum/tags — and look for the newest
+   `stable-NNN`.
+2. Change that one line in `input-values.yaml`, so the file records what is running.
+3. Apply it to the cluster, one service at a time:
+
+```bash
+kubectl set image deploy/reticulum reticulum=hubsfoundation/reticulum:stable-860 -n hcce
+```
+
+```bash
+kubectl rollout status deploy/reticulum -n hcce --timeout=300s
+```
+
+Check the site between each one. **To undo, run the same command with the old build
+number** — the old image is still cached on the node, so it comes back in seconds.
+
+Services and their images: `reticulum`, `hubs`, `spoke`, `dialog`, `nearspark`,
+`photomnemonic` are all `hubsfoundation/<name>`. `coturn`, `haproxy`, `pgsql`,
+`pgbouncer`, `pgbouncer-t` and `postgrest` are `mozillareality` images with no Hubs
+Foundation replacement — leave them.
+
+**Do not restart `coturn` with `kubectl rollout restart`.** It binds a fixed host port and
+the replacement pod can never take it from the old one, so the rollout hangs forever. Use
+`kubectl scale deploy coturn --replicas=0 -n hcce` then `--replicas=1`.
 
 ### Updating the Cluster Configuration
 

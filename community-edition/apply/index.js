@@ -32,6 +32,42 @@ if (secretExists) {
   }
 }
 
+// 4D: not upstream. Show what would change, and make someone agree to it.
+//
+// On 18 November 2026 a plain `kubectl apply -f hcce.yaml` broke TLS on the live
+// site: the template carried an haproxy flag the cluster had never had, which made
+// a self-signed certificate the one served to every visitor. The site still
+// answered HTTP 200, so nothing looked wrong from inside the cluster.
+//
+// The template and the cluster drift apart because the cluster gets hand-patched
+// (kubectl set image, set env, patch) and the template does not. So apply is NOT a
+// no-op, and "it is the normal command" is exactly why it is dangerous.
+//
+// kubectl diff compares against the LIVE object, so it is not fooled by a stale
+// last-applied-configuration annotation the way --dry-run=server is.
+const skipConfirm = process.argv.includes("--yes");
+const diff = spawnSync("kubectl", ["diff", "-f", "hcce.yaml"], { encoding: "utf8" });
+const changes = (diff.stdout || "")
+  .split("\n")
+  .filter(l => /^[+-]/.test(l) && !/^[+-]{3}/.test(l) && !/^[+-]\s*generation:/.test(l));
+
+if (changes.length === 0) {
+  console.log("kubectl diff: no changes. Applying is a no-op.");
+} else {
+  console.log("");
+  console.log("kubectl diff reports " + changes.length + " changed line(s):");
+  console.log("");
+  changes.forEach(l => console.log("  " + l));
+  console.log("");
+  console.log("Read EVERY line above and be able to say why you want it. Recognising a");
+  console.log("line is not the same as wanting it - that is how TLS broke on 18 Nov 2026.");
+  console.log("");
+  if (!skipConfirm) {
+    console.log("Nothing has been applied. To go ahead:  npm run apply -- --yes");
+    process.exit(1);
+  }
+}
+
 // 4D: check the exit status. Upstream discards it, so a partial apply still
 // printed "all deployments ready" further down.
 const applied = spawnSync("kubectl", ["apply", "-f", "hcce.yaml"], { stdio: "inherit" });

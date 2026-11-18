@@ -1260,7 +1260,16 @@ spec:
         - --configmap-tcp-services=$Namespace/haproxy-tcp-config
         - --ingress.class=haproxy
         - --log=warning #error warning info debug trace
-        - --default-ssl-certificate=$Namespace/cert-hcce
+        # 4D: upstream has  - --default-ssl-certificate=$Namespace/cert-hcce  here.
+        # REMOVED, and do not put it back. Applied to this cluster on 18 November 2026 it
+        # made the SELF-SIGNED cert-hcce certificate the one served to every visitor,
+        # instead of the four Let's Encrypt certificates cert-manager maintains. The site
+        # still answered HTTP 200, so nothing looked broken from inside the cluster -- but
+        # every browser showed a security warning. Verified with:
+        #   echo | openssl s_client -connect virtualplaces-uva.eu:443         #     -servername virtualplaces-uva.eu | openssl x509 -noout -issuer
+        # which returned issuer=CN=virtualplaces-uva.eu, i.e. self-signed. Reverted with
+        # kubectl rollout undo. cert-manager owns TLS here, so there is no role for a
+        # default certificate.
         securityContext:
           runAsUser:  1000
           runAsGroup: 1000
